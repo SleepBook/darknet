@@ -1,15 +1,12 @@
-This Project Drived from the Darknet Project, which you can find the information below. 
+##Intro
 
-Our aim is to accelerate the Yolo-tiny NN on Embedded Platforms, so only the code relevant to Yolo-tiny inference is kept. 
+This project aim to realize and optimize the yolo-tiny network on embedded platforms. These platforms including FPGA(Zynq), embedded GPU(Nvidia Jetson)
 
+The project only has the inference functionality of YOLO-Tiny, the training functionality is not reserved, since it's not likly you want to train your network on these platforms.
 
-#Darknet#
-Darknet is an open source neural network framework written in C and CUDA. It is fast, easy to install, and supports CPU and GPU computation.
+The project derived from the Darknet framework, credit goes there. 
 
-For more information see the [Darknet project website](http://pjreddie.com/darknet).
-
-For questions or issues please use the [Google Group](https://groups.google.com/forum/#!forum/darknet).
-
+##Usage
 To test on an image:
     ./darknet yolo test cfg/yolo-tiny.cfg yolo-tiny.weights IMAGEPATH
 
