@@ -5,7 +5,6 @@
 #include "image.h"
 #include "layer.h"
 #include "data.h"
-#include "tree.h"
 
 typedef enum {
     CONSTANT, STEP, EXP, POLY, STEPS, SIG, RANDOM
@@ -37,24 +36,16 @@ typedef struct network{
     int num_steps;
     int burn_in;
 
-    int adam;
-    float B1;
-    float B2;
-    float eps;
-
     int inputs;
-    int notruth;
     int h, w, c;
     int max_crop;
     int min_crop;
     float angle;
-    float aspect;
     float exposure;
     float saturation;
     float hue;
 
     int gpu_index;
-    tree *hierarchy;
 
     #ifdef GPU
     float **input_gpu;
@@ -73,8 +64,6 @@ typedef struct network_state {
 } network_state;
 
 #ifdef GPU
-float train_networks(network *nets, int n, data d, int interval);
-void sync_nets(network *nets, int n, int interval);
 float train_network_datum_gpu(network net, float *x, float *y);
 float *network_predict_gpu(network net, float *input);
 float * get_network_output_gpu_layer(network net, int i);
@@ -83,7 +72,6 @@ float *get_network_output_gpu(network net);
 void forward_network_gpu(network net, network_state state);
 void backward_network_gpu(network net, network_state state);
 void update_network_gpu(network net);
-void harmless_update_network_gpu(network net);
 #endif
 
 float get_current_rate(network net);
@@ -123,8 +111,6 @@ int resize_network(network *net, int w, int h);
 void set_batch_network(network *net, int b);
 int get_network_input_size(network net);
 float get_network_cost(network net);
-network load_network(char *cfg, char *weights, int clear);
-load_args get_base_args(network net);
 
 int get_network_nuisance(network net);
 int get_network_background(network net);

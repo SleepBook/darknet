@@ -1,7 +1,5 @@
 #include "network.h"
 #include "detection_layer.h"
-#include "region_layer.h"
-#include "cost_layer.h"
 #include "utils.h"
 #include "parser.h"
 #include "box.h"
@@ -14,10 +12,28 @@
 #ifdef OPENCV
 #include "opencv2/highgui/highgui_c.h"
 #include "opencv2/imgproc/imgproc_c.h"
-image get_image_from_stream(CvCapture *cap);
+void convert_detections(float *predictions, int classes, int num, int square, int side, int w, int h, float thresh, float **probs, box *boxes, int only_objectness);
+
+/* Comment on the overral code logic
+ * basically, after geting a frame from the stream, namly in, it is first resized to in_s
+ * this procedure is done using the fetch function
+ * in the detection funciton, work are done on det and det_s which essentially point to teh
+ * same image in and in_s represent. 
+ * in the detect function, it maintain an internal buffer, which has the length of FRAME.
+ * this means all the work on a single frame is relevant on the adjacent FRAME frames
+ * so, in the detection function first the original image det and resized det_s are passed in
+ * (the reason det is needed is for printing out again)
+ * the inference made on the det_s in stored in prediction, a 1-d array
+ * prediction are placed in 2-d array predictions(which has a depth of FRAME), then every final prediction 
+ * are draw from all the FRAME predictions by taking an average. 
+ * then by using det, the original frame is put into the internal buffer of images,
+ * some other routines process the pictures in images and put box on them
+ * then the pointer det is used again to refer to the picture-processed on the last frame and return back
+ * finally the demo got this processed image by refering to det and put it on the output stream
+ */
 
 static char **demo_names;
-static image **demo_alphabet;
+static image *demo_labels;
 static int demo_classes;
 
 static float **probs;
@@ -31,7 +47,6 @@ static image disp = {0};
 static CvCapture * cap;
 static float fps = 0;
 static float demo_thresh = 0;
-static float demo_hier_thresh = .5;
 
 static float *predictions[FRAMES];
 static int demo_index = 0;
@@ -50,35 +65,30 @@ void *fetch_in_thread(void *ptr)
 
 void *detect_in_thread(void *ptr)
 {
-    float nms = .4;
+    float nms = .1;
 
-    layer l = net.layers[net.n-1];
+    detection_layer l = net.layers[net.n-1];
     float *X = det_s.data;
     float *prediction = network_predict(net, X);
 
     memcpy(predictions[demo_index], prediction, l.outputs*sizeof(float));
+    //defined in util.h, average each col of a 2-d matrix, output 1-d array
+    //squeeze on the 2nd paramenter dimension
     mean_arrays(predictions, FRAMES, l.outputs, avg);
-    l.output = avg;
 
     free_image(det_s);
-    if(l.type == DETECTION){
-        get_detection_boxes(l, 1, 1, demo_thresh, probs, boxes, 0);
-    } else if (l.type == REGION){
-        get_region_boxes(l, 1, 1, demo_thresh, probs, boxes, 0, 0, demo_hier_thresh);
-    } else {
-        error("Last layer must produce detections\n");
-    }
-    if (nms > 0) do_nms(boxes, probs, l.w*l.h*l.n, l.classes, nms);
+    convert_detections(avg, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
+    if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
     printf("\033[2J");
     printf("\033[1;1H");
     printf("\nFPS:%.1f\n",fps);
     printf("Objects:\n\n");
 
     images[demo_index] = det;
-    det = images[(demo_index + FRAMES/2 + 1)%FRAMES];
-    demo_index = (demo_index + 1)%FRAMES;
+    det = images[(demo_index + FRAMES/2 + 1)%FRAMES]; //point to a frame before, in a loop fashion
+    demo_index = (demo_index + 1)%FRAMES; //point to a frame after
 
-    draw_detections(det, l.w*l.h*l.n, demo_thresh, boxes, probs, demo_names, demo_alphabet, demo_classes);
+    draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, demo_names, demo_labels, demo_classes);
 
     return 0;
 }
@@ -92,16 +102,13 @@ double get_wall_time()
     return (double)time.tv_sec + (double)time.tv_usec * .000001;
 }
 
-void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const char *filename, char **names, int classes, int frame_skip, char *prefix, float hier_thresh)
+void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const char *filename, char **names, image *labels, int classes, int frame_skip)
 {
-    //skip = frame_skip;
-    image **alphabet = load_alphabet();
     int delay = frame_skip;
     demo_names = names;
-    demo_alphabet = alphabet;
+    demo_labels = labels;
     demo_classes = classes;
     demo_thresh = thresh;
-    demo_hier_thresh = hier_thresh;
     printf("Demo\n");
     net = parse_network_cfg(cfgfile);
     if(weightfile){
@@ -112,7 +119,6 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     srand(2222222);
 
     if(filename){
-        printf("video file: %s\n", filename);
         cap = cvCaptureFromFile(filename);
     }else{
         cap = cvCaptureFromCAM(cam_index);
@@ -120,22 +126,23 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 
     if(!cap) error("Couldn't connect to webcam.\n");
 
-    layer l = net.layers[net.n-1];
+    detection_layer l = net.layers[net.n-1];
     int j;
 
     avg = (float *) calloc(l.outputs, sizeof(float));
     for(j = 0; j < FRAMES; ++j) predictions[j] = (float *) calloc(l.outputs, sizeof(float));
     for(j = 0; j < FRAMES; ++j) images[j] = make_image(1,1,3);
 
-    boxes = (box *)calloc(l.w*l.h*l.n, sizeof(box));
-    probs = (float **)calloc(l.w*l.h*l.n, sizeof(float *));
-    for(j = 0; j < l.w*l.h*l.n; ++j) probs[j] = (float *)calloc(l.classes, sizeof(float));
+    boxes = (box *)calloc(l.side*l.side*l.n, sizeof(box));
+    probs = (float **)calloc(l.side*l.side*l.n, sizeof(float *));
+    for(j = 0; j < l.side*l.side*l.n; ++j) probs[j] = (float *)calloc(l.classes, sizeof(float *));
 
     pthread_t fetch_thread;
     pthread_t detect_thread;
 
-    fetch_in_thread(0);
-    det = in;
+    //the reasons for below operations is we need to pack the buffers before the iterations can smoothly start
+    fetch_in_thread(0); // in and in_s will get initial value after this step
+    det = in; //notice, every time we need to pass in and in_s to det and det_s
     det_s = in_s;
 
     fetch_in_thread(0);
@@ -152,12 +159,12 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
         det_s = in_s;
     }
 
+    //main opeariton iteration
     int count = 0;
-    if(!prefix){
-        cvNamedWindow("Demo", CV_WINDOW_NORMAL); 
-        cvMoveWindow("Demo", 0, 0);
-        cvResizeWindow("Demo", 1352, 1013);
-    }
+    cvNamedWindow("Demo", CV_WINDOW_NORMAL); 
+    cvMoveWindow("Demo", 0, 0);
+    //cvResizeWindow("Demo", 1352, 1013);
+    cvResizeWindow("Demo", 448,448);
 
     double before = get_wall_time();
 
@@ -167,7 +174,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
             if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
             if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
 
-            if(!prefix){
+            if(1){
                 show_image(disp, "Demo");
                 int c = cvWaitKey(1);
                 if (c == 10){
@@ -178,7 +185,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
                 }
             }else{
                 char buff[256];
-                sprintf(buff, "%s_%08d", prefix, count);
+                sprintf(buff, "/home/pjreddie/tmp/bag_%07d", count);
                 save_image(disp, buff);
             }
 
@@ -215,7 +222,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     }
 }
 #else
-void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const char *filename, char **names, int classes, int frame_skip, char *prefix, float hier_thresh)
+void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const char *filename, char **names, image *labels, int classes, int frame_skip)
 {
     fprintf(stderr, "Demo needs OpenCV for webcam images.\n");
 }

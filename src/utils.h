@@ -7,7 +7,6 @@
 #define SECRET_NUM -1234
 #define TWO_PI 6.2831853071795864769252866
 
-int *read_map(char *filename);
 void shuffle(void *arr, size_t n, size_t size);
 void sorta_shuffle(void *arr, size_t n, size_t size, size_t sections);
 void free_ptrs(void **ptrs, int n);
@@ -20,7 +19,7 @@ void read_all(int fd, char *buffer, size_t bytes);
 void write_all(int fd, char *buffer, size_t bytes);
 int read_all_fail(int fd, char *buffer, size_t bytes);
 int write_all_fail(int fd, char *buffer, size_t bytes);
-void find_replace(char *str, char *orig, char *rep, char *output);
+char *find_replace(char *str, char *orig, char *rep);
 void error(const char *s);
 void malloc_error();
 void file_error(char *s);
@@ -58,7 +57,6 @@ float find_float_arg(int argc, char **argv, char *arg, float def);
 int find_arg(int argc, char* argv[], char *arg);
 char *find_char_arg(int argc, char **argv, char *arg, char *def);
 int sample_array(float *a, int n);
-void print_statistics(float *a, int n);
 
 #endif
 
