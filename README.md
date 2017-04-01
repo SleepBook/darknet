@@ -1,4 +1,4 @@
-##Intro
+## Intro
 
 This project aim to realize and optimize the yolo-tiny network on embedded platforms. These platforms including FPGA(Zynq), embedded GPU(Nvidia Jetson)
 
@@ -6,7 +6,7 @@ The project only has the inference functionality of YOLO-Tiny, the training func
 
 The project derived from the Darknet framework, credit goes there. 
 
-##Usage
+## Usage
 To test on an image:
     ./darknet yolo test cfg/yolo-tiny.cfg yolo-tiny.weights IMAGEPATH
 
